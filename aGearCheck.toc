@@ -1,0 +1,17 @@
+## Interface: 50504
+## Title: aGearCheck
+## Notes: Character gear enhancement overlay - highlights missing enchants, sockets, and profession-specific enhancements
+## Author: Hela
+## Version: 0.1.0
+## SavedVariables: aGearCheckDB
+
+Compat\VersionAdapter.lua
+Data\EnchantRules_MoP.lua
+Data\EngineeringEffects_MoP.lua
+Core\Rules.lua
+Core\Scanner.lua
+UI\Overlay.lua
+UI\DebugWindow.lua
+UI\Options.lua
+Core\EventBus.lua
+aGearCheck.lua
