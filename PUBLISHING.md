@@ -117,6 +117,25 @@ git tag -a v1.1.0 -m "v1.1.0"    # release
 # 3. Push commit + tag — webhook fires automatically
 git push origin master
 git push origin v1.1.0
+
+# 4. Create GitHub release with simple changelog
+gh release create v1.1.0 --title "v1.1.0" --notes "v1.1.0
+- Added X
+- Fixed Y
+- Improved Z"
 ```
+
+### Release notes format
+
+Keep it simple — version number on the first line, bullet list of changes:
+
+```
+v1.2.0
+- GemPicker: atlas arrow textures replace text buttons
+- Debug window: socket and gem info sections
+- Interface compatibility 50503 + 50504
+```
+
+No headers, no code blocks, no sub-sections — just the list.
 
 CurseForge will package and publish within a minute or two of the tag push.
