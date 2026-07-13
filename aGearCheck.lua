@@ -25,6 +25,7 @@ local DEFAULTS = {
     ohPadding      = 6,
     ohStrata       = "HIGH",
     labelsVisible  = true,
+    gemFavorites   = {},   -- [socketType][itemID] = true
 }
 
 -- Expose defaults so Options panel can use them for Reset
@@ -96,6 +97,32 @@ local function HandleSlash(msg)
     elseif cmd == "tinker" then
         AGC.DebugWindow:Show()
 
+    elseif cmd == "sockets" then
+        -- Dump ItemSocketingFrame structure so we can verify GemPicker hooks
+        if not ItemSocketingFrame then
+            print("|cffff9900[aGearCheck]|r ItemSocketingFrame is nil (Blizzard_ItemSocketingUI not loaded yet — open a socketing UI first)")
+        else
+            print("|cff00ccff[aGearCheck]|r ItemSocketingFrame exists, shown=" .. tostring(ItemSocketingFrame:IsShown()))
+            local c = ItemSocketingFrame.SocketingContainer
+            print("  SocketingContainer=" .. tostring(c))
+            if c then
+                print("  SocketFrames=" .. tostring(c.SocketFrames))
+                for i = 1, 4 do
+                    local s = c.SocketFrames and c.SocketFrames[i] or c["Socket"..i]
+                    if s then print("  Socket"..i.."="..tostring(s:GetName()).." shown="..tostring(s:IsShown()))
+                    else print("  Socket"..i.."=nil") end
+                end
+            end
+            if C_ItemSocketInfo then
+                print("  C_ItemSocketInfo.GetNumSockets()=" .. tostring(C_ItemSocketInfo.GetNumSockets()))
+                for i = 1, 3 do
+                    print("  GetSocketTypes("..i..")=" .. tostring(C_ItemSocketInfo.GetSocketTypes(i)))
+                end
+            else
+                print("  C_ItemSocketInfo=nil")
+            end
+        end
+
     else
         print("|cff00ccff[aGearCheck]|r Commands:")
         print("  /agc missing  - toggle show/hide present enhancements")
@@ -103,6 +130,7 @@ local function HandleSlash(msg)
         print("  /agc test     - print current issues to chat")
         print("  /agc debug    - dump item link fields to chat")
         print("  /agc tinker   - open debug info window")
+        print("  /agc sockets  - dump socketing frame structure (open socket UI first)")
     end
 end
 
@@ -118,5 +146,6 @@ bootFrame:RegisterEvent("PLAYER_LOGIN")
 bootFrame:SetScript("OnEvent", function()
     InitDB()
     AGC.EventBus:Init()
+    AGC.GemPicker:Init()
     print("|cff00ccff[aGearCheck]|r v0.1.0 loaded. Use /agc for help.")
 end)

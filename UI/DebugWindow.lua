@@ -97,6 +97,76 @@ local function GatherDebugText()
         end
     end
 
+    -- Socket & gem debug
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "--- Socket & Gem Info (equipped) ---"
+    for slotId = 1, 17 do
+        local link = GetInventoryItemLink("player", slotId)
+        if link then
+            local parsed = AGC.Version:ParseItemLink(link)
+            -- Gem IDs live at allFields positions 3-6 (0 = empty)
+            if parsed and parsed.allFields then
+                local gemIDs = {}
+                for pos = 3, 6 do
+                    local gid = tonumber(parsed.allFields[pos])
+                    if gid and gid ~= 0 then
+                        gemIDs[#gemIDs + 1] = gid
+                    end
+                end
+                if #gemIDs > 0 then
+                    local name = GetItemInfo(link) or "?"
+                    lines[#lines + 1] = ("Slot %2d: %s"):format(slotId, name)
+                    for gi, gid in ipairs(gemIDs) do
+                        local gname, _, gqual, _, _, _, gsubtype =
+                            GetItemInfo("item:" .. gid)
+                        local qc = (gqual == 4 and "|cffa335ee"
+                                 or gqual == 3 and "|cff0070dd"
+                                 or "|cff1eff00")
+                        lines[#lines + 1] = ("  Gem%d: %sid=%d %s|r (%s)"):format(
+                            gi, qc, gid, gname or "?", gsubtype or "?")
+                    end
+                end
+            end
+        end
+    end
+
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "--- Gems in bags ---"
+    local getNumSlots = (C_Container and C_Container.GetContainerNumSlots)
+                     or GetContainerNumSlots
+    local getLink     = (C_Container and C_Container.GetContainerItemLink)
+                     or GetContainerItemLink
+    local bagGems = {}   -- [itemID] = { name, subtype, quality, count }
+    for bag = 0, (NUM_BAG_SLOTS or 4) do
+        for slot = 1, (getNumSlots(bag) or 0) do
+            local blink = getLink(bag, slot)
+            if blink then
+                local bid = tonumber(blink:match("item:(%d+)"))
+                local bname, _, bqual, _, _, btype, bsub = GetItemInfo(blink)
+                if btype == "Gem" and bname and bid then
+                    if not bagGems[bid] then
+                        bagGems[bid] = { name=bname, sub=bsub or "?",
+                                         qual=bqual or 0, count=0 }
+                    end
+                    bagGems[bid].count = bagGems[bid].count + 1
+                end
+            end
+        end
+    end
+    local sortedBag = {}
+    for _, g in pairs(bagGems) do sortedBag[#sortedBag + 1] = g end
+    table.sort(sortedBag, function(a, b)
+        if a.qual ~= b.qual then return a.qual > b.qual end
+        return a.name < b.name
+    end)
+    if #sortedBag == 0 then
+        lines[#lines + 1] = "  (none)"
+    else
+        for _, g in ipairs(sortedBag) do
+            lines[#lines + 1] = ("  %dx %s  (%s)"):format(g.count, g.name, g.sub)
+        end
+    end
+
     return table.concat(lines, "\n")
 end
 
