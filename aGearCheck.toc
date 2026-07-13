@@ -1,4 +1,4 @@
-## Interface: 50504
+## Interface: 50503, 50504
 ## Title: aGearCheck
 ## Notes: Character gear enhancement overlay - highlights missing enchants, sockets, and profession-specific enhancements
 ## Author: Aldur
