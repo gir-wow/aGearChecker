@@ -1,0 +1,8 @@
+package-as: aGearCheck
+
+ignore:
+  # Internal planning and design documents
+  - PUBLISHING.md
+  - ADDON_PLAN.md
+  # Deployment scripts
+  - scripts
