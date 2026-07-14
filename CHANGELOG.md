@@ -1,5 +1,11 @@
 # aGearCheck Changelog
 
+## v1.2.3
+
+### Bug Fixes
+- Fixed game crash when using GemPicker on items in inventory (not equipped)
+- Now uses safe C_ItemSocketInfo API instead of calling Blizzard frame mixin methods directly
+
 ## v1.2.2
 
 - Updated changelog format

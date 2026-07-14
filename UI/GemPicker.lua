@@ -362,7 +362,8 @@ local function BuildPopup()
         row:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
         -- Click: pick up gem then socket it
-        -- Use the socket button's own ClickSocketButton mixin (most reliable)
+        -- Use C_ItemSocketInfo.ClickSocketButton (safest API path — avoids
+        -- crashes when the socketed item is in bags rather than equipped).
         row:SetScript("OnClick", function(self)
             local gem = self.gem
             if not gem then return end
@@ -374,17 +375,12 @@ local function BuildPopup()
             pickupFn(gem.bag, gem.slot)
             -- Give the cursor state one frame to update, then click the socket
             C_Timer.After(0.1, function()
-                local container = GetSocketContainer()
-                if not container then ClickSocket(idx); return end
-                local socketBtn = (container.SocketFrames and container.SocketFrames[idx])
-                               or container["Socket" .. idx]
-                if socketBtn and socketBtn.ClickSocketButton then
-                    socketBtn:ClickSocketButton()   -- uses the Blizzard mixin directly
-                elseif socketBtn and socketBtn.OnReceiveDrag then
-                    socketBtn:OnReceiveDrag()
-                else
-                    ClickSocket(idx)                -- C_ItemSocketInfo fallback
-                end
+                -- Guard: socket frame must still be open with valid sockets
+                if not ItemSocketingFrame or not ItemSocketingFrame:IsShown() then return end
+                if GetNumSockets() < idx then return end
+                -- Always use the official API — calling mixin methods directly
+                -- on socket buttons can crash when the item is in inventory.
+                ClickSocket(idx)
             end)
         end)
 
