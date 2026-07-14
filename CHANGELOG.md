@@ -1,5 +1,9 @@
 # aGearCheck Changelog
 
+## v1.2.2
+
+- Updated changelog format
+
 ## v1.2.1
 
 ### Bug Fixes
