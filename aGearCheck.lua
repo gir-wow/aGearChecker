@@ -48,6 +48,14 @@ end
 function AGC:OnRefresh()
     if not CharacterFrame or not CharacterFrame:IsShown() then return end
 
+    -- Only show overlays on the Character/Equipment tab (tab 1).
+    -- Other tabs (Reputation, Currency, etc.) should not have labels.
+    local selectedTab = CharacterFrame.selectedTab or (PanelTemplates_GetSelectedTab and PanelTemplates_GetSelectedTab(CharacterFrame)) or 1
+    if selectedTab ~= 1 then
+        self.Overlay:Hide()
+        return
+    end
+
     local scanResults, professions = self.Scanner:ScanEquipment()
     local issues = self.Rules:Evaluate(scanResults, professions)
     self.Overlay:Render(issues, aGearCheckDB)

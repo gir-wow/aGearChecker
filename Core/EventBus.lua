@@ -70,14 +70,38 @@ function EventBus:Init()
         end)
     end
 
-    -- Periodic refresh while the character frame is open, to catch
-    -- in-place modifications (enchants, tinkers, gems) that don't
-    -- always fire specific events.
-    C_Timer.NewTicker(3, function()
-        if CharacterFrame and CharacterFrame:IsShown() then
-            ScheduleRefresh()
+    -- Hook PanelTemplates tab switching so labels show/hide instantly
+    -- when switching between Character, Reputation, Currency, etc.
+    -- The Character/Equipment tab is always tab index 1.
+    if CharacterFrame then
+        -- Hook each tab button's OnClick
+        local numTabs = CharacterFrame.numTabs or 4
+        for i = 1, numTabs do
+            local tab = _G["CharacterFrameTab" .. i]
+            if tab then
+                tab:HookScript("OnClick", function()
+                    if i == 1 then
+                        ScheduleRefresh()
+                    else
+                        AGC.Overlay:Hide()
+                    end
+                end)
+            end
         end
-    end)
+
+        -- Also hook PanelTemplates_SetTab if available (catches programmatic tab switches)
+        if PanelTemplates_SetTab then
+            hooksecurefunc("PanelTemplates_SetTab", function(frame, id)
+                if frame == CharacterFrame then
+                    if id == 1 then
+                        ScheduleRefresh()
+                    else
+                        AGC.Overlay:Hide()
+                    end
+                end
+            end)
+        end
+    end
 end
 
 function EventBus:ForceRefresh()
