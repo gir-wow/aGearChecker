@@ -1,5 +1,11 @@
 # aGearCheck Changelog
 
+## v1.3.0
+
+- Added native General stat rows for gear check summary values
+- Kept the slot overlay behavior for per-item missing/enhanced highlights
+- Added a Belt Buckle row to the General stats section
+
 ## v1.2.3
 
 ### Bug Fixes

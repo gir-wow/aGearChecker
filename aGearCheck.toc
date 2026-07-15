@@ -2,7 +2,7 @@
 ## Title: aGearCheck
 ## Notes: Character gear enhancement overlay - highlights missing enchants, sockets, and profession-specific enhancements
 ## Author: Aldur
-## Version: 1.2.3
+## Version: 1.3.0
 ## SavedVariables: aGearCheckDB
 
 Compat\VersionAdapter.lua
@@ -10,6 +10,7 @@ Data\EnchantRules_MoP.lua
 Data\EngineeringEffects_MoP.lua
 Core\Rules.lua
 Core\Scanner.lua
+UI\StatsPane.lua
 UI\Overlay.lua
 UI\DebugWindow.lua
 UI\Options.lua

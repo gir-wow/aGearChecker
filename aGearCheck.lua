@@ -12,18 +12,26 @@ local DEFAULTS = {
     leftOffsetY    = 0,
     leftPadding    = 15,
     leftStrata     = "HIGH",
+    leftAnchor     = "TOPLEFT",
+    leftAlign      = "LEFT",
     rightOffsetX   = 0,
     rightOffsetY   = 0,
     rightPadding   = 15,
     rightStrata    = "HIGH",
+    rightAnchor    = "TOPRIGHT",
+    rightAlign     = "RIGHT",
     mhOffsetX      = 0,
     mhOffsetY      = 0,
     mhPadding      = 6,
     mhStrata       = "HIGH",
+    mhAnchor       = "BOTTOMRIGHT",
+    mhAlign        = "RIGHT",
     ohOffsetX      = 0,
     ohOffsetY      = 0,
     ohPadding      = 6,
     ohStrata       = "HIGH",
+    ohAnchor       = "BOTTOMLEFT",
+    ohAlign        = "LEFT",
     labelsVisible  = true,
     gemFavorites   = {},   -- [socketType][itemID] = true
 }
@@ -58,6 +66,9 @@ function AGC:OnRefresh()
 
     local scanResults, professions = self.Scanner:ScanEquipment()
     local issues = self.Rules:Evaluate(scanResults, professions)
+    if self.StatsPane then
+        self.StatsPane:SetData(scanResults, professions)
+    end
     self.Overlay:Render(issues, aGearCheckDB)
 end
 
@@ -105,6 +116,9 @@ local function HandleSlash(msg)
     elseif cmd == "tinker" then
         AGC.DebugWindow:Show()
 
+    elseif cmd == "options" or cmd == "opt" or cmd == "config" then
+        AGC.Options:Toggle()
+
     elseif cmd == "sockets" then
         -- Dump ItemSocketingFrame structure so we can verify GemPicker hooks
         if not ItemSocketingFrame then
@@ -138,6 +152,7 @@ local function HandleSlash(msg)
         print("  /agc test     - print current issues to chat")
         print("  /agc debug    - dump item link fields to chat")
         print("  /agc tinker   - open debug info window")
+        print("  /agc options  - open settings window")
         print("  /agc sockets  - dump socketing frame structure (open socket UI first)")
     end
 end
@@ -153,7 +168,8 @@ local bootFrame = CreateFrame("Frame")
 bootFrame:RegisterEvent("PLAYER_LOGIN")
 bootFrame:SetScript("OnEvent", function()
     InitDB()
+    AGC.StatsPane:Init()
     AGC.EventBus:Init()
     AGC.GemPicker:Init()
-    print("|cff00ccff[aGearCheck]|r v0.1.0 loaded. Use /agc for help.")
+    print("|cff00ccff[aGearCheck]|r v1.3.0 loaded. Use /agc for help.")
 end)

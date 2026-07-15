@@ -114,6 +114,19 @@ function Overlay:ResetOverlayFrames()
     wipe(overlayFrames)
 end
 
+-- Anchor direction: which edge of the BUTTON the label attaches to.
+-- Offset sign is adjusted so positive padding always moves AWAY from the button.
+local ANCHOR_SIGN = {
+    TOPLEFT     = { px =  1, labelPt = "TOPLEFT",     btnPt = "TOPRIGHT"    },
+    TOPRIGHT    = { px = -1, labelPt = "TOPRIGHT",    btnPt = "TOPLEFT"     },
+    BOTTOMLEFT  = { px =  1, labelPt = "BOTTOMLEFT",  btnPt = "BOTTOMRIGHT" },
+    BOTTOMRIGHT = { px = -1, labelPt = "BOTTOMRIGHT", btnPt = "BOTTOMLEFT"  },
+    TOP         = { px =  0, labelPt = "BOTTOM",      btnPt = "TOP"         },
+    BOTTOM      = { px =  0, labelPt = "TOP",          btnPt = "BOTTOM"      },
+    LEFT        = { px = -1, labelPt = "RIGHT",        btnPt = "LEFT"        },
+    RIGHT       = { px =  1, labelPt = "LEFT",         btnPt = "RIGHT"       },
+}
+
 -- Reposition a label based on current saved settings
 local function PositionLabel(slotId, fs)
     local btnName = SLOT_BUTTONS[slotId]
@@ -126,22 +139,227 @@ local function PositionLabel(slotId, fs)
 
     fs:ClearAllPoints()
 
+    local anchorKey, alignKey, padKey, oxKey, oyKey
     if side == "LEFT" then
-        local pad = db.leftPadding or 4
-        fs:SetPoint("TOPLEFT", btn, "TOPRIGHT", pad + (db.leftOffsetX or 0), db.leftOffsetY or 0)
-        fs:SetJustifyH("LEFT")
+        anchorKey, alignKey, padKey, oxKey, oyKey = "leftAnchor", "leftAlign", "leftPadding", "leftOffsetX", "leftOffsetY"
     elseif side == "RIGHT" then
-        local pad = db.rightPadding or 4
-        fs:SetPoint("TOPRIGHT", btn, "TOPLEFT", -pad + (db.rightOffsetX or 0), db.rightOffsetY or 0)
-        fs:SetJustifyH("RIGHT")
+        anchorKey, alignKey, padKey, oxKey, oyKey = "rightAnchor", "rightAlign", "rightPadding", "rightOffsetX", "rightOffsetY"
     elseif side == "WEAPON_L" then
-        local pad = db.mhPadding or 4
-        fs:SetPoint("TOPRIGHT", btn, "TOPLEFT", -pad + (db.mhOffsetX or 0), db.mhOffsetY or 0)
-        fs:SetJustifyH("RIGHT")
+        anchorKey, alignKey, padKey, oxKey, oyKey = "mhAnchor", "mhAlign", "mhPadding", "mhOffsetX", "mhOffsetY"
     elseif side == "WEAPON_R" then
-        local pad = db.ohPadding or 4
-        fs:SetPoint("TOPLEFT", btn, "TOPRIGHT", pad + (db.ohOffsetX or 0), db.ohOffsetY or 0)
-        fs:SetJustifyH("LEFT")
+        anchorKey, alignKey, padKey, oxKey, oyKey = "ohAnchor", "ohAlign", "ohPadding", "ohOffsetX", "ohOffsetY"
+    end
+
+    local anchorDir = db[anchorKey] or "TOPRIGHT"
+    local align     = db[alignKey] or "LEFT"
+    local pad       = db[padKey] or 4
+    local offX      = db[oxKey] or 0
+    local offY      = db[oyKey] or 0
+
+    local info = ANCHOR_SIGN[anchorDir]
+    if not info then info = ANCHOR_SIGN["TOPRIGHT"] end
+
+    local finalX = (info.px * pad) + offX
+    local finalY = offY
+
+    fs:SetPoint(info.labelPt, btn, info.btnPt, finalX, finalY)
+    fs:SetJustifyH(align)
+end
+
+------------------------------------------------------------------------
+-- Visibility helper (must be declared before summary and toggle code)
+------------------------------------------------------------------------
+local function IsLabelsVisible()
+    local db = aGearCheckDB or {}
+    if db.labelsVisible == nil then return true end
+    return db.labelsVisible
+end
+
+------------------------------------------------------------------------
+-- Enhancement summary (Enchanted X/Y, Gemmed X/Y, Tinkered X/Y)
+------------------------------------------------------------------------
+local summaryFrame, summaryRows
+local summaryStatGroup
+local summaryBaseGroupHeight
+
+local function FindFirstFrame(names)
+    for _, name in ipairs(names) do
+        local frame = _G[name]
+        if frame then
+            return frame
+        end
+    end
+    return nil
+end
+
+local function GetOrCreateSummary()
+    if summaryFrame then return summaryRows end
+    if not CharacterFrame then return nil end
+
+    summaryStatGroup = FindFirstFrame({
+        "CharacterStatsPaneCategory1",
+        "CharacterStatsPane",
+        "CharacterFrame",
+    })
+
+    summaryFrame = CreateFrame("Frame", nil, summaryStatGroup or CharacterFrame)
+    summaryFrame:SetSize(169, 54)
+    summaryFrame:SetFrameStrata("HIGH")
+    summaryFrame:SetFrameLevel(100)
+
+    -- Anchor below the right-side stat panel (General/Attributes/Melee area).
+    local anchor = FindFirstFrame({
+        "CharacterStatsPaneCategory1Stat4",
+        "CharacterStatsPaneCategory1",
+        "PlayerStatFrameRight4",        -- Movement Speed row
+        "PlayerStatFrameRightDropDown", -- stat category dropdown
+        "CharacterAttributesFrame",
+    })
+    if anchor then
+        summaryFrame:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+    else
+        -- Fallback: below the General section header area on the right
+        summaryFrame:SetPoint("TOPLEFT", summaryStatGroup or CharacterFrame, "BOTTOMLEFT", 0, -2)
+    end
+
+    summaryRows = {}
+    for i = 1, 3 do
+        local row = CreateFrame("Frame", nil, summaryFrame)
+        row:SetSize(169, 14)
+        if i == 1 then
+            row:SetPoint("TOPLEFT", summaryFrame, "TOPLEFT", 0, 0)
+        else
+            row:SetPoint("TOPLEFT", summaryRows[i - 1].row, "BOTTOMLEFT", 0, -2)
+        end
+
+        local label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetPoint("LEFT", row, "LEFT", 0, 0)
+        label:SetJustifyH("LEFT")
+
+        local value = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        value:SetJustifyH("RIGHT")
+
+        summaryRows[i] = { row = row, label = label, value = value }
+    end
+
+    return summaryRows
+end
+
+local function ResizeSummaryGroup(lineCount)
+    if not summaryStatGroup then return end
+
+    if not summaryBaseGroupHeight then
+        summaryBaseGroupHeight = summaryStatGroup:GetHeight()
+    end
+
+    if lineCount > 0 then
+        local summaryHeight = (lineCount * 14) + math.max(0, lineCount - 1) * 2
+        summaryStatGroup:SetHeight(summaryBaseGroupHeight + summaryHeight + 2)
+    else
+        summaryStatGroup:SetHeight(summaryBaseGroupHeight)
+    end
+end
+
+local function UpdateSummary(scanResults, professions)
+    local rows = GetOrCreateSummary()
+    if not rows then return end
+    if not IsLabelsVisible() then
+        ResizeSummaryGroup(0)
+        summaryFrame:Hide()
+        return
+    end
+
+    local EnchantData  = AGC.EnchantData
+    local EngineerData = AGC.EngineerData
+
+    -- Count enchants
+    local enchTotal, enchHave = 0, 0
+    for slotId in pairs(EnchantData.ENCHANTABLE_SLOTS) do
+        if scanResults[slotId] then
+            enchTotal = enchTotal + 1
+            if scanResults[slotId].hasEnchant then enchHave = enchHave + 1 end
+        end
+    end
+    -- Off-hand (if enchantable)
+    local ohItem = scanResults[EnchantData.OFFHAND_SLOT]
+    if ohItem and AGC.Scanner:IsOffHandEnchantable(ohItem.itemLink) then
+        enchTotal = enchTotal + 1
+        if ohItem.hasEnchant then enchHave = enchHave + 1 end
+    end
+    -- Ring enchants (enchanting profession)
+    if professions and professions[EnchantData.PROF_ENCHANTING] then
+        for slotId in pairs(EnchantData.RING_SLOTS) do
+            if scanResults[slotId] then
+                enchTotal = enchTotal + 1
+                if scanResults[slotId].hasEnchant then enchHave = enchHave + 1 end
+            end
+        end
+    end
+
+    -- Count gems (filled vs total sockets across all equipped items)
+    local gemTotal, gemHave = 0, 0
+    for slotId, item in pairs(scanResults) do
+        local baseCount = AGC.Scanner:GetBaseSocketCount(item.parsed.itemId)
+        if item.hasExtraSocket then baseCount = baseCount + 1 end
+        gemTotal = gemTotal + baseCount
+        gemHave  = gemHave + math.min(item.filledGems, baseCount)
+    end
+
+    -- Count tinkers (engineering only)
+    local tinkTotal, tinkHave = 0, 0
+    if professions and professions[EnchantData.PROF_ENGINEERING] then
+        for slotId in pairs(EngineerData.TINKER_SLOTS) do
+            if scanResults[slotId] then
+                tinkTotal = tinkTotal + 1
+                if scanResults[slotId].hasTinker then tinkHave = tinkHave + 1 end
+            end
+        end
+    end
+
+    -- Build display lines
+    local function ColorCount(have, total)
+        if have >= total then
+            return "|cff66ff66" .. have .. "/" .. total .. "|r"
+        else
+            return "|cffff3333" .. have .. "/" .. total .. "|r"
+        end
+    end
+
+    local lineIndex = 0
+    local function AddLine(labelText, valueText)
+        lineIndex = lineIndex + 1
+        local row = rows[lineIndex]
+        if row then
+            row.label:SetText(labelText)
+            row.value:SetText(valueText)
+            row.row:Show()
+        end
+    end
+
+    if enchTotal > 0 then
+        AddLine("Enchanted", ColorCount(enchHave, enchTotal))
+    end
+    if gemTotal > 0 then
+        AddLine("Gemmed", ColorCount(gemHave, gemTotal))
+    end
+    if tinkTotal > 0 then
+        AddLine("Tinkered", ColorCount(tinkHave, tinkTotal))
+    end
+
+    for i = lineIndex + 1, #rows do
+        rows[i].row:Hide()
+        rows[i].label:SetText("")
+        rows[i].value:SetText("")
+    end
+
+    if lineIndex > 0 then
+        summaryFrame:SetHeight((lineIndex * 14) + math.max(0, lineIndex - 1) * 2)
+        ResizeSummaryGroup(lineIndex)
+        summaryFrame:Show()
+    else
+        ResizeSummaryGroup(0)
+        summaryFrame:Hide()
     end
 end
 
@@ -151,12 +369,6 @@ end
 
 -- Toggle checkbox on the character frame (top-left corner)
 local toggleCB
-
-local function IsLabelsVisible()
-    local db = aGearCheckDB or {}
-    if db.labelsVisible == nil then return true end
-    return db.labelsVisible
-end
 
 local function GetOrCreateToggle()
     if toggleCB then return toggleCB end
@@ -177,6 +389,22 @@ local function GetOrCreateToggle()
     toggleCB.label:SetPoint("LEFT", toggleCB, "RIGHT", 2, 0)
     toggleCB.label:SetText("GearCheck")
 
+    -- Settings cogwheel button
+    local cogBtn = CreateFrame("Button", nil, CharacterFrame)
+    cogBtn:SetSize(16, 16)
+    cogBtn:SetPoint("LEFT", toggleCB.label, "RIGHT", 4, 0)
+    cogBtn:SetFrameStrata("HIGH")
+    cogBtn:SetFrameLevel(100)
+    cogBtn:SetNormalTexture("Interface\\Buttons\\UI-OptionsButton")
+    cogBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    cogBtn:SetScript("OnClick", function() AGC.Options:Toggle() end)
+    cogBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("aGearCheck Options", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    cogBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     toggleCB:SetScript("OnClick", function(self)
         aGearCheckDB.labelsVisible = self:GetChecked()
         if aGearCheckDB.labelsVisible then
@@ -187,6 +415,18 @@ local function GetOrCreateToggle()
     end)
 
     return toggleCB
+end
+
+--- Sync the character frame toggle checkbox to match the current DB value.
+function Overlay:SyncToggle()
+    if toggleCB then
+        toggleCB:SetChecked(IsLabelsVisible())
+        if IsLabelsVisible() then
+            AGC:OnRefresh()
+        else
+            Overlay:Hide()
+        end
+    end
 end
 
 --- Update the toggle checkbox color based on whether any issues are missing.
@@ -201,9 +441,11 @@ function Overlay:UpdateToggle(hasMissing)
 end
 
 --- Render issues on the character frame.
---- @param issues  table  slotId → list of { text, severity }
---- @param cfg     table  aGearCheckDB (or defaults)
-function Overlay:Render(issues, cfg)
+--- @param issues      table  slotId → list of { text, severity }
+--- @param cfg         table  aGearCheckDB (or defaults)
+--- @param scanResults table  slotId → scan data (optional, for summary)
+--- @param professions table  profession flags (optional, for summary)
+function Overlay:Render(issues, cfg, scanResults, professions)
     cfg = cfg or {}
     local missingColor = cfg.missingColor or { 1, 0.2, 0.2 }
     local presentColor = cfg.presentColor or { 0.6, 1, 0.6 }
@@ -266,12 +508,12 @@ function Overlay:Render(issues, cfg)
             end
         end
     end
-end
 
---- Hide all overlay labels.
+end
 function Overlay:Hide()
     for _, fs in pairs(labels) do
         fs:Hide()
         fs:SetText("")
     end
+    if summaryFrame then summaryFrame:Hide() end
 end

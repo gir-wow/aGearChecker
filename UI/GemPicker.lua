@@ -362,25 +362,78 @@ local function BuildPopup()
         row:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
         -- Click: pick up gem then socket it
-        -- Use C_ItemSocketInfo.ClickSocketButton (safest API path — avoids
-        -- crashes when the socketed item is in bags rather than equipped).
+        -- Uses SplitContainerItem to grab exactly 1 from a stack, then
+        -- advances to the next empty socket so you can gem all slots in one go.
         row:SetScript("OnClick", function(self)
             local gem = self.gem
             if not gem then return end
             local idx = currentSocket
-            popup:Hide()
+
+            -- Pick up exactly 1 gem (SplitContainerItem for stacks)
+            local getInfo = (C_Container and C_Container.GetContainerItemInfo)
+                          or GetContainerItemInfo
+            local splitFn = (C_Container and C_Container.SplitContainerItem)
+                          or SplitContainerItem
             local pickupFn = (C_Container and C_Container.PickupContainerItem)
                            or PickupContainerItem
             if not pickupFn then return end
-            pickupFn(gem.bag, gem.slot)
+
+            local stackCount = 1
+            if getInfo then
+                local info = getInfo(gem.bag, gem.slot)
+                if type(info) == "table" then
+                    stackCount = info.stackCount or 1
+                elseif type(info) == "number" then
+                    -- Old API: returns texture, count, ...
+                    local _, count = getInfo(gem.bag, gem.slot)
+                    stackCount = count or 1
+                end
+            end
+
+            if stackCount > 1 and splitFn then
+                splitFn(gem.bag, gem.slot, 1)
+            else
+                pickupFn(gem.bag, gem.slot)
+            end
+
             -- Give the cursor state one frame to update, then click the socket
             C_Timer.After(0.1, function()
                 -- Guard: socket frame must still be open with valid sockets
                 if not ItemSocketingFrame or not ItemSocketingFrame:IsShown() then return end
                 if GetNumSockets() < idx then return end
-                -- Always use the official API — calling mixin methods directly
-                -- on socket buttons can crash when the item is in inventory.
                 ClickSocket(idx)
+
+                -- After placing, advance to next empty socket and re-scan
+                C_Timer.After(0.2, function()
+                    if not ItemSocketingFrame or not ItemSocketingFrame:IsShown() then
+                        popup:Hide()
+                        return
+                    end
+                    local n = GetNumSockets()
+                    local nextIdx = nil
+                    for i = 1, n do
+                        if i ~= idx then
+                            -- Check if socket i is still empty (no gem placed yet)
+                            local gemName = GetExistingSocketInfo and GetExistingSocketInfo(i)
+                            local newGem = GetNewSocketInfo and GetNewSocketInfo(i)
+                            if not newGem or newGem == "" then
+                                nextIdx = i
+                                break
+                            end
+                        end
+                    end
+                    if nextIdx then
+                        -- Re-open picker for next socket
+                        currentSocket = nextIdx
+                        currentType = GetSocketType(nextIdx) or "Prismatic"
+                        popup.title:SetText((SOCKET_COLOR_TEXT[currentType] or currentType) .. " socket gems")
+                        allGems = ScanBagsForGems()
+                        Refilter()
+                        popup:Show()
+                    else
+                        popup:Hide()
+                    end
+                end)
             end)
         end)
 

@@ -1,7 +1,8 @@
 local _, AGC = ...
+AGC.Options = {}
 
 ------------------------------------------------------------------------
--- Widget helpers (template-free so they work on every Classic client)
+-- Widget helpers
 ------------------------------------------------------------------------
 
 local function MakeHeader(parent, x, y, text)
@@ -74,10 +75,12 @@ local function MakeSlider(parent, x, y, text, dbKey, lo, hi, step)
     return slider
 end
 
-local STRATA_LIST = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG", "TOOLTIP" }
+local STRATA_LIST  = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG", "TOOLTIP" }
+local ANCHOR_LIST  = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT", "TOP", "BOTTOM", "LEFT", "RIGHT" }
+local ALIGN_LIST   = { "LEFT", "CENTER", "RIGHT" }
 
 local dropdownIndex = 0
-local function MakeStrataDropdown(parent, x, y, text, dbKey)
+local function MakeDropdown(parent, x, y, text, dbKey, choices, defaultVal, onChange)
     dropdownIndex = dropdownIndex + 1
     local name = "AGCDrop" .. dropdownIndex
 
@@ -91,6 +94,7 @@ local function MakeStrataDropdown(parent, x, y, text, dbKey)
     local function OnClick(self)
         aGearCheckDB[dbKey] = self.value
         UIDropDownMenu_SetText(dd, self.value)
+        if onChange then onChange() end
         AGC.Overlay:ResetOverlayFrames()
         AGC:OnRefresh()
     end
@@ -98,128 +102,149 @@ local function MakeStrataDropdown(parent, x, y, text, dbKey)
     UIDropDownMenu_SetWidth(dd, 100)
     UIDropDownMenu_Initialize(dd, function()
         local db = aGearCheckDB or {}
-        for _, strata in ipairs(STRATA_LIST) do
+        for _, val in ipairs(choices) do
             local info = UIDropDownMenu_CreateInfo()
-            info.text  = strata
-            info.value = strata
+            info.text  = val
+            info.value = val
             info.func  = OnClick
-            info.checked = ((db[dbKey] or "HIGH") == strata)
+            info.checked = ((db[dbKey] or defaultVal) == val)
             UIDropDownMenu_AddButton(info)
         end
     end)
 
     dd:SetScript("OnShow", function()
         local db = aGearCheckDB or {}
-        UIDropDownMenu_SetText(dd, db[dbKey] or "HIGH")
+        UIDropDownMenu_SetText(dd, db[dbKey] or defaultVal)
     end)
 
     return dd
 end
 
 ------------------------------------------------------------------------
--- Build options panel (scrollable)
+-- Build a section for one side group (strata, anchor, align, sliders)
 ------------------------------------------------------------------------
+local function MakeSideSection(parent, y, title, prefix)
+    MakeSection(parent, 16, y, title)
+    MakeDropdown(parent, 20,  y - 25,  "Strata:", prefix .. "Strata", STRATA_LIST, "HIGH")
+    MakeDropdown(parent, 220, y - 25,  "Anchor:", prefix .. "Anchor", ANCHOR_LIST, "TOPRIGHT")
+    MakeDropdown(parent, 20,  y - 55,  "Align:",  prefix .. "Align",  ALIGN_LIST,  "LEFT")
+    MakeSlider(parent,   20,  y - 105, "Padding", prefix .. "Padding", 0, 30, 1)
+    MakeSlider(parent,   200, y - 105, "X Offset", prefix .. "OffsetX", -30, 30, 1)
+    MakeSlider(parent,   20,  y - 150, "Y Offset", prefix .. "OffsetY", -30, 30, 1)
+end
 
-local panel = CreateFrame("Frame")
-panel.name = "aGearCheck"
+------------------------------------------------------------------------
+-- Standalone floating options window
+------------------------------------------------------------------------
+local frame
 
-local scrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-scrollFrame:SetPoint("TOPLEFT", 4, -4)
-scrollFrame:SetPoint("BOTTOMRIGHT", -26, 4)
+local function CreateOptionsFrame()
+    if frame then return end
 
-local content = CreateFrame("Frame")
-content:SetSize(400, 880)
-scrollFrame:SetScrollChild(content)
+    frame = CreateFrame("Frame", "AGCOptionsFrame", UIParent, "BasicFrameTemplateWithInset")
+    frame:SetSize(460, 780)
+    frame:SetPoint("LEFT", UIParent, "CENTER", 200, 0)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    frame:SetFrameStrata("DIALOG")
+    frame.TitleText:SetText("aGearCheck \226\128\148 Options")
+    tinsert(UISpecialFrames, "AGCOptionsFrame")
 
-panel:SetScript("OnShow", function()
-    for _, child in ipairs({ content:GetChildren() }) do
-        if child.GetScript and child:GetScript("OnShow") then
-            child:GetScript("OnShow")(child)
+    -- Scroll frame
+    local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", frame.InsetBg or frame, "TOPLEFT", 4, -6)
+    scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -26, 8)
+
+    local content = CreateFrame("Frame")
+    content:SetSize(400, 940)
+    scrollFrame:SetScrollChild(content)
+
+    -- Refresh all child widgets on show
+    frame:SetScript("OnShow", function()
+        for _, child in ipairs({ content:GetChildren() }) do
+            if child.GetScript and child:GetScript("OnShow") then
+                child:GetScript("OnShow")(child)
+            end
         end
-    end
-end)
+    end)
 
-MakeHeader(content, 16, -16, "aGearCheck Settings")
+    MakeHeader(content, 16, -16, "aGearCheck Settings")
 
--- Display toggles
-MakeCheckbox(content, 18, -50, "Show enchant effects on enchanted gear", "showPresent")
+    -- Display toggles
+    local labelsCB = MakeCheckbox(content, 18, -50, "Show overlay", "labelsVisible")
+    -- Sync character frame toggle when this changes
+    local origLabelsClick = labelsCB:GetScript("OnClick")
+    labelsCB:SetScript("OnClick", function(self)
+        origLabelsClick(self)
+        AGC.Overlay:SyncToggle()
+    end)
 
--- Font size
-MakeSlider(content, 20, -110, "Font Size", "fontSize", 8, 20, 1)
+    -- Font size
+    MakeSlider(content, 20, -110, "Font Size", "fontSize", 8, 20, 1)
 
--- Left side gear
-local yOff = -160
-MakeSection(content, 16, yOff, "Left Side Gear")
-MakeStrataDropdown(content, 20, yOff - 25, "Strata:", "leftStrata")
-MakeSlider(content, 20,  yOff - 65, "Padding", "leftPadding", 0, 30, 1)
-MakeSlider(content, 200, yOff - 65, "X Offset", "leftOffsetX",  -30, 30, 1)
-MakeSlider(content, 20,  yOff - 110, "Y Offset", "leftOffsetY",  -30, 30, 1)
+    -- Side sections
+    MakeSideSection(content, -160, "Left Side Gear",               "left")
+    MakeSideSection(content, -340, "Right Side Gear",              "right")
+    MakeSideSection(content, -520, "Main Hand (Left Weapon)",      "mh")
+    MakeSideSection(content, -700, "Off Hand (Right Weapon)",      "oh")
 
--- Right side gear
-yOff = -310
-MakeSection(content, 16, yOff, "Right Side Gear")
-MakeStrataDropdown(content, 20, yOff - 25, "Strata:", "rightStrata")
-MakeSlider(content, 20,  yOff - 65, "Padding", "rightPadding", 0, 30, 1)
-MakeSlider(content, 200, yOff - 65, "X Offset", "rightOffsetX", -30, 30, 1)
-MakeSlider(content, 20,  yOff - 110, "Y Offset", "rightOffsetY", -30, 30, 1)
-
--- Main hand
-yOff = -460
-MakeSection(content, 16, yOff, "Main Hand (Left Weapon)")
-MakeStrataDropdown(content, 20, yOff - 25, "Strata:", "mhStrata")
-MakeSlider(content, 20,  yOff - 65, "Padding", "mhPadding", 0, 30, 1)
-MakeSlider(content, 200, yOff - 65, "X Offset", "mhOffsetX", -30, 30, 1)
-MakeSlider(content, 20,  yOff - 110, "Y Offset", "mhOffsetY", -30, 30, 1)
-
--- Off hand
-yOff = -610
-MakeSection(content, 16, yOff, "Off Hand (Right Weapon)")
-MakeStrataDropdown(content, 20, yOff - 25, "Strata:", "ohStrata")
-MakeSlider(content, 20,  yOff - 65, "Padding", "ohPadding", 0, 30, 1)
-MakeSlider(content, 200, yOff - 65, "X Offset", "ohOffsetX", -30, 30, 1)
-MakeSlider(content, 20,  yOff - 110, "Y Offset", "ohOffsetY", -30, 30, 1)
-
--- Reset to Default button
-yOff = -760
-local resetBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-resetBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 20, yOff)
-resetBtn:SetSize(160, 26)
-resetBtn:SetText("Reset to Defaults")
-resetBtn:SetScript("OnClick", function()
-    local defaults = AGC.DEFAULTS
-    if not defaults then return end
-    wipe(aGearCheckDB)
-    for k, v in pairs(defaults) do
-        if type(v) == "table" then
-            aGearCheckDB[k] = { unpack(v) }
-        else
-            aGearCheckDB[k] = v
+    -- Reset to Defaults
+    local yBtn = -880
+    local resetBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    resetBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 20, yBtn)
+    resetBtn:SetSize(160, 26)
+    resetBtn:SetText("Reset to Defaults")
+    resetBtn:SetScript("OnClick", function()
+        local defaults = AGC.DEFAULTS
+        if not defaults then return end
+        wipe(aGearCheckDB)
+        for k, v in pairs(defaults) do
+            if type(v) == "table" then
+                aGearCheckDB[k] = { unpack(v) }
+            else
+                aGearCheckDB[k] = v
+            end
         end
-    end
-    AGC.Overlay:ResetOverlayFrames()
-    AGC:OnRefresh()
-    if panel:GetScript("OnShow") then
-        panel:GetScript("OnShow")(panel)
-    end
-    print("|cff00ccff[aGearCheck]|r Settings reset to defaults.")
-end)
+        AGC.Overlay:ResetOverlayFrames()
+        AGC:OnRefresh()
+        if frame:GetScript("OnShow") then
+            frame:GetScript("OnShow")(frame)
+        end
+        print("|cff00ccff[aGearCheck]|r Settings reset to defaults.")
+    end)
 
--- Debug Info button
-yOff = yOff - 40
-local debugBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-debugBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 20, yOff)
-debugBtn:SetSize(160, 26)
-debugBtn:SetText("Show Debug Info")
-debugBtn:SetScript("OnClick", function()
-    AGC.DebugWindow:Show()
-end)
+    -- Debug Info
+    local debugBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    debugBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 20, yBtn - 34)
+    debugBtn:SetSize(160, 26)
+    debugBtn:SetText("Show Debug Info")
+    debugBtn:SetScript("OnClick", function()
+        AGC.DebugWindow:Show()
+    end)
+
+    frame:Hide()
+end
 
 ------------------------------------------------------------------------
--- Register with the game options UI
+-- Public API
 ------------------------------------------------------------------------
-if Settings and Settings.RegisterCanvasLayoutCategory then
-    local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
-    Settings.RegisterAddOnCategory(category)
-elseif InterfaceOptions_AddCategory then
-    InterfaceOptions_AddCategory(panel)
+function AGC.Options:Toggle()
+    CreateOptionsFrame()
+    if frame:IsShown() then
+        frame:Hide()
+    else
+        frame:Show()
+    end
+end
+
+function AGC.Options:Show()
+    CreateOptionsFrame()
+    frame:Show()
+end
+
+function AGC.Options:Hide()
+    if frame then frame:Hide() end
 end
