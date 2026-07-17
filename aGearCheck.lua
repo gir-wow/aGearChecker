@@ -119,6 +119,10 @@ local function HandleSlash(msg)
     elseif cmd == "options" or cmd == "opt" or cmd == "config" then
         AGC.Options:Toggle()
 
+    elseif cmd == "gemdebug" then
+        aGearCheckDB.gemPickerDebug = not aGearCheckDB.gemPickerDebug
+        print("|cff00ccff[aGearCheck]|r GemPicker debug " .. (aGearCheckDB.gemPickerDebug and "enabled" or "disabled"))
+
     elseif cmd == "sockets" then
         -- Dump ItemSocketingFrame structure so we can verify GemPicker hooks
         if not ItemSocketingFrame then
@@ -153,6 +157,7 @@ local function HandleSlash(msg)
         print("  /agc debug    - dump item link fields to chat")
         print("  /agc tinker   - open debug info window")
         print("  /agc options  - open settings window")
+        print("  /agc gemdebug - toggle GemPicker debug logging")
         print("  /agc sockets  - dump socketing frame structure (open socket UI first)")
     end
 end
@@ -171,5 +176,5 @@ bootFrame:SetScript("OnEvent", function()
     AGC.StatsPane:Init()
     AGC.EventBus:Init()
     AGC.GemPicker:Init()
-    print("|cff00ccff[aGearCheck]|r v1.3.0 loaded. Use /agc for help.")
+    print("|cff00ccff[aGearCheck]|r v1.3.1 loaded. Use /agc for help.")
 end)

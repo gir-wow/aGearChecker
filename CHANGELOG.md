@@ -1,5 +1,11 @@
 # aGearCheck Changelog
 
+## v1.3.1
+
+- GemPicker: improved stacked-gem pickup reliability by using container-only pickup with lock-aware retries
+- GemPicker: added stricter cursor item validation and richer runtime cursor diagnostics
+- Debug window: expanded runtime logging to help troubleshoot socketing flow edge cases
+
 ## v1.3.0
 
 - Added native General stat rows for gear check summary values

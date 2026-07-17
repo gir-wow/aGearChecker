@@ -218,6 +218,150 @@ local allGems        = {}
 local filteredGems   = {}
 local scrollOffset   = 0
 
+local function IsGemDebugEnabled()
+    return aGearCheckDB and aGearCheckDB.gemPickerDebug
+end
+
+local function GemDebug(msg)
+    if IsGemDebugEnabled() then
+        local text = tostring(msg)
+        print("|cff00ccff[aGearCheck:GemPicker]|r " .. text)
+        if AGC.DebugWindow and AGC.DebugWindow.AddLog then
+            AGC.DebugWindow:AddLog("[GemPicker] " .. text)
+        end
+    end
+end
+
+local function DumpSocketState(prefix)
+    if not IsGemDebugEnabled() then return end
+    local n = GetNumSockets()
+    GemDebug(prefix .. " numSockets=" .. tostring(n))
+    for i = 1, n do
+        local existing = GetExistingSocketInfo and select(1, GetExistingSocketInfo(i))
+        local newGem   = GetNewSocketInfo and select(1, GetNewSocketInfo(i))
+        GemDebug(("  socket %d type=%s existing=%s new=%s")
+            :format(i, tostring(GetSocketType(i)), tostring(existing), tostring(newGem)))
+    end
+end
+
+local function HasGemOnCursor(itemID)
+    local cType, a, b = GetCursorInfo()
+    if cType ~= "item" then return false end
+
+    local cursorItemID = nil
+    if type(a) == "number" then
+        cursorItemID = a
+    elseif type(a) == "string" then
+        cursorItemID = tonumber(a:match("item:(%d+)")) or tonumber(a)
+    end
+    if not cursorItemID and type(b) == "string" then
+        cursorItemID = tonumber(b:match("item:(%d+)")) or tonumber(b)
+    end
+
+    -- No reliable item id means we should not assume success.
+    if not cursorItemID then return false end
+    return tonumber(cursorItemID) == tonumber(itemID)
+end
+
+local function PickupGemForSocket(gem)
+    if HasGemOnCursor(gem.itemID) then
+        GemDebug("cursor already has target gem; skipping pickup")
+        return true, nil
+    end
+
+    local cType, cItemID = GetCursorInfo()
+    if cType == "item" and not HasGemOnCursor(gem.itemID) then
+        GemDebug("cursor occupied by different itemID=" .. tostring(cItemID) .. "; clearing")
+        ClearCursor()
+    end
+
+    -- Resolve fresh bag/slot each click in case bag addons moved items.
+    local getNumSlots = (C_Container and C_Container.GetContainerNumSlots) or GetContainerNumSlots
+    local getLink     = (C_Container and C_Container.GetContainerItemLink) or GetContainerItemLink
+
+    local candidates, seen = {}, {}
+    local function addCandidate(bag, slot, source)
+        if bag == nil or slot == nil then return end
+        local key = tostring(bag) .. ":" .. tostring(slot)
+        if seen[key] then return end
+        seen[key] = true
+        candidates[#candidates + 1] = { bag = bag, slot = slot, source = source }
+    end
+
+    -- Prefer the exact row slot the user clicked.
+    addCandidate(gem.bag, gem.slot, "selected")
+
+    -- Then try any other matching stack/single slot.
+    for bag = 0, (NUM_BAG_SLOTS or 4) do
+        for slot = 1, (getNumSlots and getNumSlots(bag) or 0) do
+            local link = getLink and getLink(bag, slot)
+            local id = link and tonumber(link:match("item:(%d+)"))
+            if id and id == gem.itemID then
+                addCandidate(bag, slot, "scan")
+            end
+        end
+    end
+
+    if #candidates == 0 then
+        GemDebug("pickup failed: no bag slot found for gem itemID=" .. tostring(gem.itemID))
+        return false, "missing"
+    end
+
+    local getInfo = (C_Container and C_Container.GetContainerItemInfo)
+                  or GetContainerItemInfo
+    local pickupFn = (C_Container and C_Container.PickupContainerItem)
+                   or PickupContainerItem
+    if not pickupFn then
+        GemDebug("pickup failed: PickupContainerItem missing")
+        return false, "missing_api"
+    end
+
+    local sawLocked = false
+
+    -- First pass: unlocked candidates only.
+    for _, candidate in ipairs(candidates) do
+        local stackCount = 1
+        local isLocked = false
+        if getInfo then
+            local info = getInfo(candidate.bag, candidate.slot)
+            if type(info) == "table" then
+                stackCount = info.stackCount or 1
+                isLocked = info.isLocked or false
+            elseif type(info) == "number" then
+                local _, count, locked = getInfo(candidate.bag, candidate.slot)
+                stackCount = count or 1
+                isLocked = locked or false
+            end
+        end
+
+        GemDebug(("try pickup source=%s bag=%s slot=%s stackCount=%s locked=%s")
+            :format(tostring(candidate.source), tostring(candidate.bag), tostring(candidate.slot), tostring(stackCount), tostring(isLocked)))
+
+        if isLocked then
+            sawLocked = true
+            GemDebug("skip locked candidate")
+        else
+            pickupFn(candidate.bag, candidate.slot)
+            if not HasGemOnCursor(gem.itemID) then
+                pickupFn(candidate.bag, candidate.slot)
+            end
+
+            local ok = HasGemOnCursor(gem.itemID)
+            local t, a, b = GetCursorInfo()
+            GemDebug("cursor after pickup ok=" .. tostring(ok) .. " rawType=" .. tostring(t) .. " rawA=" .. tostring(a) .. " rawB=" .. tostring(b))
+            if ok then return true, nil end
+        end
+    end
+
+    if sawLocked then
+        GemDebug("pickup blocked by lock; retry needed")
+        return false, "locked"
+    end
+
+    GemDebug("pickup failed across all candidate slots")
+    return false, "failed"
+end
+
 local function RefreshRows()
     for i, row in ipairs(rowFrames) do
         local gem = filteredGems[i + scrollOffset]
@@ -368,60 +512,40 @@ local function BuildPopup()
             local gem = self.gem
             if not gem then return end
             local idx = currentSocket
+            GemDebug(("click gem=%s itemId=%s bag=%s slot=%s targetSocket=%s")
+                :format(tostring(gem.name), tostring(gem.itemID), tostring(gem.bag), tostring(gem.slot), tostring(idx)))
 
-            -- Pick up exactly 1 gem (SplitContainerItem for stacks)
-            local getInfo = (C_Container and C_Container.GetContainerItemInfo)
-                          or GetContainerItemInfo
-            local splitFn = (C_Container and C_Container.SplitContainerItem)
-                          or SplitContainerItem
-            local pickupFn = (C_Container and C_Container.PickupContainerItem)
-                           or PickupContainerItem
-            if not pickupFn then return end
-
-            local stackCount = 1
-            if getInfo then
-                local info = getInfo(gem.bag, gem.slot)
-                if type(info) == "table" then
-                    stackCount = info.stackCount or 1
-                elseif type(info) == "number" then
-                    -- Old API: returns texture, count, ...
-                    local _, count = getInfo(gem.bag, gem.slot)
-                    stackCount = count or 1
-                end
-            end
-
-            if stackCount > 1 and splitFn then
-                splitFn(gem.bag, gem.slot, 1)
-            else
-                pickupFn(gem.bag, gem.slot)
-            end
-
-            -- Give the cursor state one frame to update, then click the socket
-            C_Timer.After(0.1, function()
+            local function ClickAndAdvance()
                 -- Guard: socket frame must still be open with valid sockets
-                if not ItemSocketingFrame or not ItemSocketingFrame:IsShown() then return end
-                if GetNumSockets() < idx then return end
+                if not ItemSocketingFrame or not ItemSocketingFrame:IsShown() then
+                    GemDebug("abort: ItemSocketingFrame hidden before click")
+                    return
+                end
+                if GetNumSockets() < idx then
+                    GemDebug("abort: target socket out of range")
+                    DumpSocketState("range-check")
+                    return
+                end
+                if not HasGemOnCursor(gem.itemID) then
+                    GemDebug("abort: cursor lost target gem before click")
+                    return
+                end
+
                 ClickSocket(idx)
+                GemDebug("clicked socket " .. tostring(idx))
+                DumpSocketState("after ClickSocket")
 
                 -- After placing, advance to next empty socket and re-scan
                 C_Timer.After(0.2, function()
                     if not ItemSocketingFrame or not ItemSocketingFrame:IsShown() then
+                        GemDebug("frame hidden after click; closing popup")
                         popup:Hide()
                         return
                     end
                     local n = GetNumSockets()
-                    local nextIdx = nil
-                    for i = 1, n do
-                        if i ~= idx then
-                            -- Check if socket i is still empty (no gem placed yet)
-                            local gemName = GetExistingSocketInfo and GetExistingSocketInfo(i)
-                            local newGem = GetNewSocketInfo and GetNewSocketInfo(i)
-                            if not newGem or newGem == "" then
-                                nextIdx = i
-                                break
-                            end
-                        end
-                    end
+                    local nextIdx = (idx < n) and (idx + 1) or nil
+                    GemDebug("nextIdx=" .. tostring(nextIdx))
+                    DumpSocketState("post-delay")
                     if nextIdx then
                         -- Re-open picker for next socket
                         currentSocket = nextIdx
@@ -434,7 +558,26 @@ local function BuildPopup()
                         popup:Hide()
                     end
                 end)
-            end)
+            end
+
+            local function TryPlace(attempt)
+                local ok, reason = PickupGemForSocket(gem)
+                if ok then
+                    -- Give the cursor state one frame to update, then click the socket
+                    C_Timer.After(0.1, ClickAndAdvance)
+                    return
+                end
+
+                if reason == "locked" and attempt < 6 then
+                    GemDebug("retry pickup after lock attempt=" .. tostring(attempt + 1))
+                    C_Timer.After(0.15, function() TryPlace(attempt + 1) end)
+                    return
+                end
+
+                GemDebug("abort: could not place gem on cursor for socket " .. tostring(idx) .. " reason=" .. tostring(reason))
+            end
+
+            TryPlace(1)
         end)
 
         -- Favourite star toggle

@@ -3,6 +3,15 @@ AGC.DebugWindow = {}
 
 local DebugWindow = AGC.DebugWindow
 local frame
+local runtimeLogs = {}
+local MAX_RUNTIME_LOGS = 300
+
+local function PushRuntimeLog(line)
+    runtimeLogs[#runtimeLogs + 1] = date("%H:%M:%S") .. "  " .. tostring(line)
+    if #runtimeLogs > MAX_RUNTIME_LOGS then
+        table.remove(runtimeLogs, 1)
+    end
+end
 
 ------------------------------------------------------------------------
 -- Gather all debug info into a single string
@@ -136,6 +145,8 @@ local function GatherDebugText()
                      or GetContainerNumSlots
     local getLink     = (C_Container and C_Container.GetContainerItemLink)
                      or GetContainerItemLink
+    local getInfo     = (C_Container and C_Container.GetContainerItemInfo)
+                     or GetContainerItemInfo
     local bagGems = {}   -- [itemID] = { name, subtype, quality, count }
     for bag = 0, (NUM_BAG_SLOTS or 4) do
         for slot = 1, (getNumSlots(bag) or 0) do
@@ -148,7 +159,17 @@ local function GatherDebugText()
                         bagGems[bid] = { name=bname, sub=bsub or "?",
                                          qual=bqual or 0, count=0 }
                     end
-                    bagGems[bid].count = bagGems[bid].count + 1
+                    local stackCount = 1
+                    if getInfo then
+                        local info = getInfo(bag, slot)
+                        if type(info) == "table" then
+                            stackCount = info.stackCount or 1
+                        elseif type(info) == "number" then
+                            local _, count = getInfo(bag, slot)
+                            stackCount = count or 1
+                        end
+                    end
+                    bagGems[bid].count = bagGems[bid].count + stackCount
                 end
             end
         end
@@ -164,6 +185,16 @@ local function GatherDebugText()
     else
         for _, g in ipairs(sortedBag) do
             lines[#lines + 1] = ("  %dx %s  (%s)"):format(g.count, g.name, g.sub)
+        end
+    end
+
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "--- Runtime Log ---"
+    if #runtimeLogs == 0 then
+        lines[#lines + 1] = "  (none)"
+    else
+        for i = 1, #runtimeLogs do
+            lines[#lines + 1] = "  " .. runtimeLogs[i]
         end
     end
 
@@ -227,6 +258,20 @@ function DebugWindow:Refresh()
     local text = GatherDebugText()
     frame.editBox:SetText(text)
     frame.editBox:SetCursorPosition(0)
+end
+
+function DebugWindow:AddLog(line)
+    PushRuntimeLog(line)
+    if frame and frame:IsShown() then
+        self:Refresh()
+    end
+end
+
+function DebugWindow:ClearLog()
+    wipe(runtimeLogs)
+    if frame and frame:IsShown() then
+        self:Refresh()
+    end
 end
 
 function DebugWindow:Toggle()
